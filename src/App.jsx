@@ -253,8 +253,9 @@ export default function App() {
   async function next() {
     if (qNum >= TOTAL_Q) {
       setScreen("result");
-      const upd = await saveLB({ name: playerName, score, total: TOTAL_Q, category, difficulty, bestStreak, date: new Date().toLocaleDateString("de-CH") });
-      setLb(upd);
+      saveLB({ name: playerName, score, total: TOTAL_Q, category, difficulty, bestStreak, date: new Date().toLocaleDateString("de-CH") })
+        .then(upd => { if (upd) setLb(upd); })
+        .catch(() => {});
     } else {
       setQNum(n => n + 1);
       loadQ(sessionQs, historyQs, category);
