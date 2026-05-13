@@ -21,24 +21,60 @@ const DIFFICULTIES = [
 ];
 const TOTAL_Q = 10;
 const BASE_TIME = 20;
-const LB_KEY = "pubquiz-lb-v5";
+const MAX_HISTORY = 100;
 
+const SB_URL = import.meta.env.VITE_SUPABASE_URL;
+const SB_KEY = import.meta.env.VITE_SUPABASE_KEY;
+
+// ── Supabase: Leaderboard ─────────────────────────────────────────────────────
 async function loadLB() {
-  try { const r = localStorage.getItem(LB_KEY); return r ? JSON.parse(r) : []; }
-  catch { return []; }
-}
-async function saveLB(entry) {
   try {
-    const cur = await loadLB();
-    const upd = [...cur, entry].sort((a, b) => b.score - a.score).slice(0, 20);
-    localStorage.setItem(LB_KEY, JSON.stringify(upd));
-    return upd;
+    const res = await fetch(`${SB_URL}/rest/v1/leaderboard?order=score.desc&limit=20`, {
+      headers: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}` },
+    });
+    return await res.json();
   } catch { return []; }
 }
 
+async function saveLB(entry) {
+  try {
+    await fetch(`${SB_URL}/rest/v1/leaderboard`, {
+      method: "POST",
+      headers: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify({ name: entry.name, score: entry.score, total: entry.total, category: entry.category, difficulty: entry.difficulty, best_streak: entry.bestStreak, date: entry.date }),
+    });
+    return await loadLB();
+  } catch { return []; }
+}
+
+// ── Supabase: Played Questions ────────────────────────────────────────────────
+async function loadPlayedQuestions(playerName, category) {
+  try {
+    const res = await fetch(
+      `${SB_URL}/rest/v1/played_questions?player_name=eq.${encodeURIComponent(playerName)}&category=eq.${encodeURIComponent(category)}&order=created_at.desc&limit=${MAX_HISTORY}`,
+      { headers: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}` } }
+    );
+    const data = await res.json();
+    return data.map(r => r.frage);
+  } catch { return []; }
+}
+
+async function savePlayedQuestion(playerName, frage, category) {
+  try {
+    await fetch(`${SB_URL}/rest/v1/played_questions`, {
+      method: "POST",
+      headers: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify({ player_name: playerName, frage, category }),
+    });
+  } catch {}
+}
+
+// ── Anthropic API ─────────────────────────────────────────────────────────────
 async function fetchQuestion(category, difficulty, usedQs) {
   const cat = CATEGORIES.find(c => c.id === category)?.label || "Gemischt";
-  const used = usedQs.length ? `\nNicht wiederholen:\n${usedQs.slice(-15).join("\n")}` : "";
+  const used = usedQs.length
+    ? `\n\nDiese Fragen wurden diesem Spieler bereits gestellt — NIEMALS wiederholen:\n${usedQs.join("\n")}`
+    : "";
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -50,10 +86,10 @@ async function fetchQuestion(category, difficulty, usedQs) {
     body: JSON.stringify({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 800,
-      system: `Pub-Quiz-Master. NUR JSON, kein Markdown.
+      system: `Du bist ein Pub-Quiz-Master. Erstelle eine einzigartige Quizfrage auf Deutsch. NUR JSON, kein Markdown.
 Format: {"frage":"...","antworten":["Richtig","Falsch2","Falsch3","Falsch4"],"richtig":0,"erklaerung":"1-2 Sätze"}
-richtig ist IMMER 0. Schwierigkeit: ${difficulty}. Kategorie: ${cat}.${used}`,
-      messages: [{ role: "user", content: "Neue Frage." }],
+richtig ist IMMER Index 0. Schwierigkeit: ${difficulty}. Kategorie: ${cat}.${used}`,
+      messages: [{ role: "user", content: "Neue, noch nie gestellte Frage bitte." }],
     }),
   });
   const data = await res.json();
@@ -64,71 +100,47 @@ richtig ist IMMER 0. Schwierigkeit: ${difficulty}. Kategorie: ${cat}.${used}`,
   return { frage: parsed.frage, antworten: shuffled, richtig: shuffled.indexOf(correct), erklaerung: parsed.erklaerung };
 }
 
+// ── CSS ───────────────────────────────────────────────────────────────────────
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Sora:wght@700;800&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root { --gold: #d4aa55; --gold2: #eac96e; --bg: #12121e; --bg2: #1a1a2e; --card: rgba(255,255,255,0.05); --border: rgba(255,255,255,0.1); --text: #ede9f8; --muted: rgba(237,233,248,0.45); }
+  :root { --gold: #d4aa55; --gold2: #eac96e; --bg: #12121e; --border: rgba(255,255,255,0.1); --text: #ede9f8; --muted: rgba(237,233,248,0.45); }
   html, body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
-  /* prevent zoom on input focus iOS */
   input { font-size: 16px !important; }
-
-  /* Layout */
   .page { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; background: var(--bg); }
   .card { width: 100%; max-width: 520px; padding: 0 16px 80px; }
-
-  /* Scrollbar */
   ::-webkit-scrollbar { width: 3px; }
   ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); border-radius: 2px; }
-
-  /* Answer buttons */
-  .ans { display: flex; align-items: center; gap: 11px; width: 100%; padding: 15px 15px; border-radius: 14px; border: 1.5px solid var(--border); background: var(--card); cursor: pointer; font-size: 15px; color: var(--text); transition: all .15s; line-height: 1.4; text-align: left; -webkit-tap-highlight-color: transparent; min-height: 56px; }
+  .ans { display: flex; align-items: center; gap: 11px; width: 100%; padding: 15px; border-radius: 14px; border: 1.5px solid var(--border); background: rgba(255,255,255,0.05); cursor: pointer; font-size: 15px; color: var(--text); transition: all .15s; line-height: 1.4; text-align: left; -webkit-tap-highlight-color: transparent; min-height: 56px; }
   .ans:active { transform: scale(0.98); }
   .ans.sel { border-color: var(--gold); background: rgba(212,170,85,0.12); }
   .ans.ok  { border-color: #4ade80; background: rgba(74,222,128,0.12); color: #4ade80; }
   .ans.bad { border-color: #f87171; background: rgba(248,113,113,0.1); color: #f87171; }
   .ans.dim { opacity: .25; }
   .ans.out { opacity: .15; text-decoration: line-through; }
-
-  /* Category pills */
   .cat { display: flex; align-items: center; gap: 6px; padding: 10px 13px; border-radius: 10px; border: 1.5px solid var(--border); background: rgba(255,255,255,.03); cursor: pointer; font-size: 14px; font-weight: 500; color: var(--muted); transition: all .15s; white-space: nowrap; -webkit-tap-highlight-color: transparent; min-height: 44px; }
   .cat.on { color: #12121e; font-weight: 700; }
-
-  /* Difficulty pills */
   .diff { padding: 10px 20px; border-radius: 10px; border: 1.5px solid var(--border); background: rgba(255,255,255,.03); cursor: pointer; font-size: 14px; font-weight: 600; color: var(--muted); transition: all .15s; flex: 1; text-align: center; min-height: 44px; -webkit-tap-highlight-color: transparent; }
   .diff.on { color: #12121e; }
-
-  /* Buttons */
   .btn-primary { background: linear-gradient(135deg, var(--gold), var(--gold2)); color: #12121e; font-weight: 800; font-size: 16px; padding: 16px 32px; border-radius: 14px; cursor: pointer; border: none; transition: all .2s; display: inline-block; min-height: 52px; -webkit-tap-highlight-color: transparent; }
   .btn-primary:active { filter: brightness(.92); transform: scale(.98); }
   .btn-primary:disabled { opacity: .35; cursor: default; }
   .btn-ghost { color: var(--gold); border: 1.5px solid rgba(212,170,85,.35); padding: 13px 22px; border-radius: 14px; font-size: 15px; font-weight: 600; cursor: pointer; background: transparent; transition: all .2s; min-height: 48px; -webkit-tap-highlight-color: transparent; }
   .btn-ghost:active { background: rgba(212,170,85,.1); }
   .btn-link { color: var(--muted); font-size: 13px; cursor: pointer; background: none; border: none; font-family: inherit; padding: 8px; min-height: 44px; }
-
-  /* Joker */
-  .joker { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 20px; border-radius: 12px; border: 1.5px solid var(--border); background: var(--card); cursor: pointer; transition: all .2s; min-height: 56px; -webkit-tap-highlight-color: transparent; border: none; background: rgba(255,255,255,.05); border: 1.5px solid var(--border); }
+  .joker { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 20px; border-radius: 12px; border: 1.5px solid var(--border); background: rgba(255,255,255,.05); cursor: pointer; transition: all .2s; min-height: 56px; -webkit-tap-highlight-color: transparent; }
   .joker:active { transform: scale(.95); }
   .joker.used, .joker:disabled { opacity: .2; cursor: default; }
-
-  /* Name input */
   .ninput { width: 100%; padding: 16px 18px; border-radius: 14px; border: 1.5px solid var(--border); background: rgba(255,255,255,.06); font-size: 16px; color: var(--text); text-align: center; transition: border-color .2s; outline: none; }
   .ninput:focus { border-color: var(--gold); }
   .ninput::placeholder { color: rgba(237,233,248,.25); }
-
-  /* Player badge */
   .player-badge { display: flex; align-items: center; gap: 11px; background: rgba(255,255,255,.04); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
   .avatar { width: 38px; height: 38px; border-radius: 50%; background: rgba(212,170,85,.15); border: 1.5px solid rgba(212,170,85,.4); display: flex; align-items: center; justify-content: center; font-family: 'Sora',sans-serif; font-weight: 900; font-size: 16px; color: var(--gold); flex-shrink: 0; }
-
-  /* Info box */
   .infobox { background: rgba(255,255,255,.04); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; font-size: 14px; color: var(--muted); line-height: 1.9; }
-
-  /* Explanation box */
   .explbox { padding: 14px 16px; background: rgba(255,255,255,.04); border: 1px solid var(--border); border-radius: 12px; font-size: 14px; line-height: 1.7; color: rgba(237,233,248,.7); }
-
   .score-glow { text-shadow: 0 0 40px rgba(212,170,85,.55); }
   .divider { height: 1px; background: var(--border); margin: 18px 0; }
   .label { font-size: 10px; letter-spacing: 4px; color: var(--gold); text-transform: uppercase; font-weight: 700; margin-bottom: 10px; opacity: .85; }
-
   @keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes popIn  { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: scale(1); } }
   @keyframes spin   { to { transform: rotate(360deg); } }
@@ -171,7 +183,8 @@ export default function App() {
   const [qNum, setQNum] = useState(0);
   const [streak, setStreak] = useState(0);
   const [bestStreak, setBestStreak] = useState(0);
-  const [usedQs, setUsedQs] = useState([]);
+  const [sessionQs, setSessionQs] = useState([]); // fragen dieser session
+  const [historyQs, setHistoryQs] = useState([]); // fragen aus supabase
   const [history, setHistory] = useState([]);
   const [j5050, setJ5050] = useState(true);
   const [jTime, setJTime] = useState(true);
@@ -197,20 +210,27 @@ export default function App() {
     setPlayerName(n); fetchLB(); setScreen("menu");
   }
 
-  async function loadQ() {
+  async function loadQ(currentSessionQs, currentHistoryQs, currentCategory) {
     setLoading(true); setSelected(null); setRevealed(false);
     setEliminated([]); setErr(null); setTimeLeft(BASE_TIME); setTimerOn(false);
     try {
-      const nq = await fetchQuestion(category, difficulty, usedQs);
-      setQ(nq); setUsedQs(p => [...p, nq.frage]); setTimerOn(true);
+      // Kombiniere session + history für maximalen Wiederholungsschutz
+      const allUsed = [...new Set([...currentHistoryQs, ...currentSessionQs])];
+      const nq = await fetchQuestion(currentCategory, difficulty, allUsed);
+      setQ(nq);
+      setTimerOn(true);
     } catch { setErr("Fehler – bitte nochmals versuchen."); }
     setLoading(false);
   }
 
-  function startQuiz() {
+  async function startQuiz() {
     setScore(0); setQNum(1); setStreak(0); setBestStreak(0);
-    setUsedQs([]); setHistory([]); setJ5050(true); setJTime(true);
-    setScreen("quiz"); setTimeout(loadQ, 40);
+    setSessionQs([]); setHistory([]); setJ5050(true); setJTime(true);
+    setScreen("quiz");
+    // Lade gespielte Fragen aus Supabase für diese Kategorie
+    const played = await loadPlayedQuestions(playerName, category);
+    setHistoryQs(played);
+    setTimeout(() => loadQ([], played, category), 40);
   }
 
   function reveal(forceSel) {
@@ -222,6 +242,11 @@ export default function App() {
     setStreak(ns); setBestStreak(bs => Math.max(ns, bs));
     const bonus = ok && ns >= 3 ? 1 : 0;
     if (ok) setScore(s => s + 1 + bonus);
+    // Frage merken (session)
+    const newSessionQs = [...sessionQs, q.frage];
+    setSessionQs(newSessionQs);
+    // Frage in Supabase speichern
+    savePlayedQuestion(playerName, q.frage, category);
     setHistory(h => [...h, { frage: q.frage, ok, richtig: q.antworten[q.richtig], bonus }]);
   }
 
@@ -229,7 +254,10 @@ export default function App() {
     if (qNum >= TOTAL_Q) {
       const upd = await saveLB({ name: playerName, score, total: TOTAL_Q, category, difficulty, bestStreak, date: new Date().toLocaleDateString("de-CH") });
       setLb(upd); setScreen("result");
-    } else { setQNum(n => n + 1); loadQ(); }
+    } else {
+      setQNum(n => n + 1);
+      loadQ(sessionQs, historyQs, category);
+    }
   }
 
   const cat  = CATEGORIES.find(c => c.id === category);
@@ -276,7 +304,6 @@ export default function App() {
             <button className="btn-link" onClick={() => { setPlayerName(""); setNameInput(""); setScreen("name"); }}>Wechseln</button>
           </div>
         </div>
-
         <Divider />
         <Label>Kategorie</Label>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 22 }}>
@@ -288,7 +315,6 @@ export default function App() {
             </button>
           ))}
         </div>
-
         <Label>Schwierigkeit</Label>
         <div style={{ display: "flex", gap: 8, marginBottom: 22 }}>
           {DIFFICULTIES.map(d => (
@@ -297,10 +323,10 @@ export default function App() {
               onClick={() => setDifficulty(d.id)}>{d.label}</button>
           ))}
         </div>
-
         <div className="infobox" style={{ marginBottom: 26 }}>
           🔥 <b style={{ color: "var(--text)" }}>Streak-Bonus</b> — ab 3x in Folge: +1 Punkt<br />
-          🃏 <b style={{ color: "var(--text)" }}>Joker</b> — 50:50 &amp; +15 Sekunden
+          🃏 <b style={{ color: "var(--text)" }}>Joker</b> — 50:50 &amp; +15 Sekunden<br />
+          🧠 <b style={{ color: "var(--text)" }}>Wiederholungsschutz</b> — bis zu 100 Fragen gemerkt
         </div>
         <button className="btn-primary" style={{ width: "100%" }} onClick={startQuiz}>Quiz starten</button>
       </div>
@@ -312,7 +338,6 @@ export default function App() {
     <div className="page">
       <style>{css}</style>
       <div className="card" style={{ paddingTop: 24 }}>
-        {/* Top bar */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <div style={{ fontSize: 13, color: "var(--muted)" }}>
             <span style={{ color: "var(--gold)", fontWeight: 700 }}>{playerName}</span> · {qNum}/{TOTAL_Q}
@@ -324,32 +349,19 @@ export default function App() {
             </span>
           </div>
         </div>
-
-        {/* Progress bar */}
         <div style={{ height: 4, borderRadius: 2, background: "rgba(255,255,255,.07)", marginBottom: 16, overflow: "hidden" }}>
           <div style={{ height: "100%", width: `${((qNum - 1) / TOTAL_Q) * 100}%`, background: "linear-gradient(90deg,var(--gold),var(--gold2))", transition: "width .5s" }} />
         </div>
-
-        {/* Badge */}
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
           <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, color: cat?.color, textTransform: "uppercase" }}>{cat?.emoji} {cat?.label}</span>
           <span style={{ fontSize: 12, color: diff?.color, opacity: .8, letterSpacing: 1, textTransform: "uppercase" }}>· {diff?.label}</span>
         </div>
 
-        {loading && (
-          <div style={{ textAlign: "center", padding: "60px 0", color: "var(--muted)" }}>
-            <Spinner /><div style={{ marginTop: 14, fontSize: 14 }}>Frage wird generiert…</div>
-          </div>
-        )}
-        {err && (
-          <div style={{ textAlign: "center", padding: 28, color: "#f87171", fontSize: 14 }}>
-            {err}<br /><br /><button className="btn-ghost" onClick={loadQ}>Nochmals versuchen</button>
-          </div>
-        )}
+        {loading && <div style={{ textAlign: "center", padding: "60px 0", color: "var(--muted)" }}><Spinner /><div style={{ marginTop: 14, fontSize: 14 }}>Frage wird generiert…</div></div>}
+        {err && <div style={{ textAlign: "center", padding: 28, color: "#f87171", fontSize: 14 }}>{err}<br /><br /><button className="btn-ghost" onClick={() => loadQ(sessionQs, historyQs, category)}>Nochmals versuchen</button></div>}
 
         {!loading && !err && q && (
           <div className="anim-popIn">
-            {/* Timer */}
             {!revealed && (
               <div style={{ marginBottom: 14 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
@@ -361,13 +373,9 @@ export default function App() {
                 </div>
               </div>
             )}
-
-            {/* Question */}
             <div style={{ padding: "18px 16px", background: "rgba(255,255,255,.04)", borderRadius: 14, borderLeft: `3px solid ${cat?.color || "var(--gold)"}`, marginBottom: 14, fontFamily: "'Sora',sans-serif", fontSize: 17, fontWeight: 700, lineHeight: 1.55 }}>
               {q.frage}
             </div>
-
-            {/* Answers */}
             <div style={{ display: "flex", flexDirection: "column", gap: 9, marginBottom: 14 }}>
               {q.antworten.map((a, i) => {
                 const isElim = eliminated.includes(i);
@@ -387,8 +395,6 @@ export default function App() {
                 );
               })}
             </div>
-
-            {/* Jokers */}
             {!revealed && (
               <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
                 <button className={`joker ${!j5050 ? "used" : ""}`} disabled={!j5050} onClick={() => {
@@ -412,8 +418,6 @@ export default function App() {
                 )}
               </div>
             )}
-
-            {/* Explanation */}
             {revealed && (
               <div className="anim-fadeUp">
                 <div className="explbox" style={{ marginBottom: 14 }}>
@@ -454,7 +458,6 @@ export default function App() {
             </div>
             {myRank >= 0 && <div style={{ fontSize: 14, color: "var(--gold)", fontWeight: 700, marginTop: 8 }}>Platz {myRank + 1} im Leaderboard 🏅</div>}
           </div>
-
           <Divider />
           <Label>Auswertung</Label>
           <div style={{ marginBottom: 22 }}>
@@ -469,7 +472,6 @@ export default function App() {
               </div>
             ))}
           </div>
-
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <button className="btn-primary" style={{ width: "100%" }} onClick={startQuiz}>Nochmals spielen</button>
             <button className="btn-ghost" style={{ width: "100%" }} onClick={() => { fetchLB(); setScreen("leaderboard"); }}>🏆 Leaderboard</button>
@@ -487,7 +489,6 @@ export default function App() {
       <div className="card anim-fadeUp" style={{ paddingTop: 32 }}>
         <Logo />
         <div style={{ fontFamily: "'Sora',sans-serif", fontSize: 22, fontWeight: 800, marginBottom: 18, textAlign: "center" }}>🏆 Leaderboard</div>
-
         {lbLoading ? (
           <div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /></div>
         ) : lb.length === 0 ? (
@@ -503,14 +504,13 @@ export default function App() {
                   {e.name}{isMe && <span style={{ fontSize: 11, opacity: .5, fontWeight: 400 }}>du</span>}
                 </div>
                 <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {c?.emoji} {c?.label || e.category} · {e.difficulty} · 🔥{e.bestStreak} · {e.date}
+                  {c?.emoji} {c?.label || e.category} · {e.difficulty} · 🔥{e.best_streak} · {e.date}
                 </div>
               </div>
               <div style={{ fontFamily: "'Sora',sans-serif", fontSize: 22, fontWeight: 900, color: i === 0 ? "var(--gold)" : "var(--muted)", flexShrink: 0 }}>{e.score}</div>
             </div>
           );
         })}
-
         <Divider />
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <button className="btn-primary" style={{ width: "100%" }} onClick={startQuiz}>Quiz spielen</button>
@@ -519,4 +519,4 @@ export default function App() {
       </div>
     </div>
   );
-}
+                  }
