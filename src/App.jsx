@@ -43,8 +43,8 @@ async function saveLB(entry) {
       headers: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
       body: JSON.stringify({ name: entry.name, score: entry.score, total: entry.total, category: entry.category, difficulty: entry.difficulty, best_streak: entry.bestStreak, date: entry.date }),
     });
-    return await loadLB();
-  } catch { return []; }
+  } catch (e) { console.error("LB save error:", e); }
+  try { return await loadLB(); } catch { return []; }
 }
 
 // ── Supabase: Played Questions ────────────────────────────────────────────────
@@ -252,8 +252,9 @@ export default function App() {
 
   async function next() {
     if (qNum >= TOTAL_Q) {
+      setScreen("result");
       const upd = await saveLB({ name: playerName, score, total: TOTAL_Q, category, difficulty, bestStreak, date: new Date().toLocaleDateString("de-CH") });
-      setLb(upd); setScreen("result");
+      setLb(upd);
     } else {
       setQNum(n => n + 1);
       loadQ(sessionQs, historyQs, category);
@@ -519,4 +520,4 @@ export default function App() {
       </div>
     </div>
   );
-                  }
+}
