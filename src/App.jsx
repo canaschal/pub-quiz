@@ -94,10 +94,26 @@ async function fetchQuestion(category, difficulty, usedQs) {
     body: JSON.stringify({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 800,
-      system: `Pub-Quiz-Master. NUR JSON, kein Markdown.
+      system: `Du bist ein Pub-Quiz-Master mit Zugang zu zehntausenden einzigartigen Fragen. Antworte NUR mit einem JSON-Objekt, kein Markdown.
 Format: {"frage":"...","antworten":["Richtig","Falsch2","Falsch3","Falsch4"],"richtig":0,"erklaerung":"1-2 Sätze"}
-richtig IMMER 0. Schwierigkeit: ${difficulty}. Kategorie: ${cat}.${used}`,
-      messages: [{ role: "user", content: "Neue Frage." }],
+
+Kategorie: ${cat}
+Schwierigkeit: ${difficulty}
+
+Schwierigkeitsgrad-Definition:
+- LEICHT: Allgemeinwissen, das fast jeder kennt. Bekannte Fakten, grosse Ereignisse, berühmte Personen. Beispiel: "Wer malte die Mona Lisa?"
+- MITTEL: Erfordert gutes Allgemeinwissen. Weniger offensichtliche Fakten, spezifischere Details. Beispiel: "In welchem Jahr wurde die Berliner Mauer gebaut?"
+- SCHWER: Expertenwissen, Nischenfakten, spezifische Details die nur echte Kenner wissen. Beispiel: "Welcher Mathematiker bewies 1995 den Letzten Satz von Fermat?"
+
+Wichtige Regeln:
+- "richtig" ist IMMER Index 0
+- Sei EXTREM vielfältig — wähle völlig zufällige, unerwartete Aspekte der Kategorie
+- Wechsle zwischen: Personen, Orte, Jahreszahlen, Erfindungen, Rekorde, Kuriositäten, Naturphänomene, kulturelle Fakten, wissenschaftliche Entdeckungen
+- Falsche Antworten müssen plausibel klingen aber klar falsch sein
+- Keine Standardfragen die jeder kennt
+- LEICHT und SCHWER dürfen NIE die gleichen Fragen haben
+${used}`,
+      messages: [{ role: "user", content: `Generiere eine einzigartige ${difficulty}e Frage über ${cat}. Seed: ${Math.floor(Math.random()*999999)}` }],
     }),
   });
   const data = await r.json();
@@ -305,7 +321,6 @@ export default function App() {
             <div style={{ fontSize:12, color:"var(--muted)", marginTop:2 }}>Bereit für {TOTAL_Q} Fragen?</div>
           </div>
           <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-            <button className="btn-g" style={{ width:"auto", padding:"10px 14px", fontSize:14 }} onClick={() => { fetchLB(); setScreen("leaderboard"); }}>🏆</button>
             <button className="btn-l" onClick={() => { setPlayer(""); setNameInput(""); setScreen("name"); }}>Wechseln</button>
           </div>
         </div>
@@ -469,7 +484,6 @@ export default function App() {
           </div>
           <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
             <button className="btn-p" onClick={startQuiz}>Nochmals spielen</button>
-            <button className="btn-g" onClick={() => { fetchLB(); setScreen("leaderboard"); }}>🏆 Leaderboard</button>
             <button className="btn-g" onClick={() => setScreen("menu")}>Einstellungen</button>
           </div>
         </div>
