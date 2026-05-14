@@ -64,14 +64,20 @@ async function saveLB(entry) {
   });
   return await loadLB();
 }
-async function loadPlayed(playerName, category) {
-  const data = await sbGet("played_questions",
-    `?player_name=eq.${encodeURIComponent(playerName)}&category=eq.${encodeURIComponent(category)}&order=created_at.desc&limit=${MAX_HISTORY}`
-  );
-  return Array.isArray(data) ? data.map(r => r.frage) : [];
+function loadPlayed(playerName, category) {
+  try {
+    const key = `pq_${playerName}_${category}`;
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
 }
-async function savePlayed(playerName, frage, category) {
-  await sbPost("played_questions", { player_name: playerName, frage, category });
+function savePlayed(playerName, frage, category) {
+  try {
+    const key = `pq_${playerName}_${category}`;
+    const existing = loadPlayed(playerName, category);
+    const updated = [...existing, frage].slice(-MAX_HISTORY);
+    localStorage.setItem(key, JSON.stringify(updated));
+  } catch {}
 }
 
 async function fetchQuestion(category, difficulty, usedQs) {
@@ -227,7 +233,7 @@ export default function App() {
     setSessQs([]); setHistory([]); setJ50(true); setJT(true);
     setFinalScore(0); setFinalBest(0);
     setScreen("quiz");
-    const played = await loadPlayed(player, cat);
+    const played = loadPlayed(player, cat);
     setHistQs(played);
     loadQ([], played, cat);
   }
@@ -235,9 +241,6 @@ export default function App() {
   function doReveal(forceSel) {
     clearTimeout(timerRef.current); setTimerOn(false);
     const s = forceSel !== undefined ? forceSel : sel;
-    const currentFrage = q.frage;
-    const currentCat = cat;
-    const currentPlayer = player;
     setSel(s); setRevealed(true);
     const ok = s !== null && s === q.richtig;
     const ns = ok ? streak+1 : 0;
@@ -245,14 +248,9 @@ export default function App() {
     setBest(b => Math.max(ns, b));
     const bonus = ok && ns >= 3 ? 1 : 0;
     if (ok) setScore(sc => sc+1+bonus);
-    setSessQs(prev => [...prev, currentFrage]);
-    // Direkt speichern mit lokalen Variablen
-    fetch(`${SB_URL}/rest/v1/played_questions`, {
-      method: "POST",
-      headers: { ...SB_HEADS, "Prefer": "return=minimal" },
-      body: JSON.stringify({ player_name: currentPlayer, frage: currentFrage, category: currentCat }),
-    }).catch(e => console.error("savePlayed error:", e));
-    setHistory(h => [...h, { frage: currentFrage, ok, richtig: q.antworten[q.richtig], bonus }]);
+    setSessQs(prev => [...prev, q.frage]);
+    savePlayed(player, q.frage, cat);
+    setHistory(h => [...h, { frage:q.frage, ok, richtig:q.antworten[q.richtig], bonus }]);
   }
 
   function goNext() {
