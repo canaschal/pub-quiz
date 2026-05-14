@@ -22,11 +22,12 @@ const DIFFICULTIES = [
 const TOTAL_Q = 10;
 const BASE_TIME = 20;
 const MAX_HISTORY = 100;
-const SB_URL = import.meta.env.VITE_SUPABASE_URL;
-const SB_KEY = import.meta.env.VITE_SUPABASE_KEY;
+
+// ── Supabase — hardcoded als Fallback falls env nicht funktioniert ─────────────
+const SB_URL = import.meta.env.VITE_SUPABASE_URL || "https://ypkpkvjpzqrnyxfgbfnx.supabase.co";
+const SB_KEY = import.meta.env.VITE_SUPABASE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlwa3BrdmpwenFybnl4ZmdiZm54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2ODA4NzcsImV4cCI6MjA5NDI1Njg3N30._mI6hadHLyacd3IZFTz5PYEgp9yT3wR57ghxkf-53zQ";
 const SB_HEADS = { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}`, "Content-Type": "application/json" };
 
-// ── Supabase helpers ──────────────────────────────────────────────────────────
 async function sbGet(table, query = "") {
   try {
     const r = await fetch(`${SB_URL}/rest/v1/${table}${query}`, { headers: SB_HEADS });
@@ -34,14 +35,21 @@ async function sbGet(table, query = "") {
     return await r.json();
   } catch { return []; }
 }
+
 async function sbPost(table, body) {
   try {
-    await fetch(`${SB_URL}/rest/v1/${table}`, {
+    const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
       method: "POST",
       headers: { ...SB_HEADS, "Prefer": "return=minimal" },
       body: JSON.stringify(body),
     });
-  } catch {}
+    if (!r.ok) {
+      const err = await r.text();
+      console.error("sbPost error:", r.status, err);
+    }
+  } catch (e) {
+    console.error("sbPost exception:", e);
+  }
 }
 
 async function loadLB() {
@@ -66,7 +74,6 @@ async function savePlayed(playerName, frage, category) {
   await sbPost("played_questions", { player_name: playerName, frage, category });
 }
 
-// ── Anthropic ─────────────────────────────────────────────────────────────────
 async function fetchQuestion(category, difficulty, usedQs) {
   const cat = CATEGORIES.find(c => c.id === category)?.label || "Gemischt";
   const used = usedQs.length ? `\nNicht wiederholen:\n${usedQs.join("\n")}` : "";
@@ -95,7 +102,6 @@ richtig IMMER 0. Schwierigkeit: ${difficulty}. Kategorie: ${cat}.${used}`,
   return { frage: parsed.frage, antworten: shuffled, richtig: shuffled.indexOf(correct), erklaerung: parsed.erklaerung };
 }
 
-// ── CSS ───────────────────────────────────────────────────────────────────────
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Sora:wght@700;800&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -141,10 +147,9 @@ const css = `
   .pi { animation: popIn .25s ease both; }
 `;
 
-// ── Components ────────────────────────────────────────────────────────────────
 function Logo({ big }) {
   return (
-    <div style={{ textAlign:"center", marginBottom: big?28:18 }}>
+    <div style={{ textAlign:"center", marginBottom:big?28:18 }}>
       <div style={{ fontSize:10, letterSpacing:6, color:"var(--gold)", textTransform:"uppercase", fontWeight:700, marginBottom:4, opacity:.8 }}>The Grand</div>
       <div style={{ fontFamily:"'Sora',sans-serif", fontSize:big?42:24, fontWeight:800, letterSpacing:-.5, background:"linear-gradient(135deg,#ede9f8 30%,var(--gold))", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>Pub Quiz</div>
       {big && <div style={{ width:40, height:2, background:"linear-gradient(90deg,transparent,var(--gold),transparent)", margin:"10px auto 0" }} />}
@@ -161,32 +166,31 @@ function Medal({ i }) {
   return <span style={{fontSize:13,color:"var(--muted)",minWidth:22,textAlign:"center"}}>{i+1}</span>;
 }
 
-// ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [screen, setScreen]       = useState("name");
-  const [nameInput, setNameInput] = useState("");
-  const [player, setPlayer]       = useState("");
-  const [cat, setCat]             = useState("gemischt");
-  const [diff, setDiff]           = useState("mittel");
-  const [q, setQ]                 = useState(null);
-  const [loading, setLoading]     = useState(false);
-  const [err, setErr]             = useState(null);
-  const [sel, setSel]             = useState(null);
-  const [revealed, setRevealed]   = useState(false);
-  const [elim, setElim]           = useState([]);
-  const [score, setScore]         = useState(0);
-  const [qNum, setQNum]           = useState(0);
-  const [streak, setStreak]       = useState(0);
-  const [best, setBest]           = useState(0);
-  const [sessQs, setSessQs]       = useState([]);
-  const [histQs, setHistQs]       = useState([]);
-  const [history, setHistory]     = useState([]);
-  const [j50, setJ50]             = useState(true);
-  const [jT, setJT]               = useState(true);
-  const [time, setTime]           = useState(BASE_TIME);
-  const [timerOn, setTimerOn]     = useState(false);
-  const [lb, setLb]               = useState([]);
-  const [lbLoad, setLbLoad]       = useState(false);
+  const [screen, setScreen]         = useState("name");
+  const [nameInput, setNameInput]   = useState("");
+  const [player, setPlayer]         = useState("");
+  const [cat, setCat]               = useState("gemischt");
+  const [diff, setDiff]             = useState("mittel");
+  const [q, setQ]                   = useState(null);
+  const [loading, setLoading]       = useState(false);
+  const [err, setErr]               = useState(null);
+  const [sel, setSel]               = useState(null);
+  const [revealed, setRevealed]     = useState(false);
+  const [elim, setElim]             = useState([]);
+  const [score, setScore]           = useState(0);
+  const [qNum, setQNum]             = useState(0);
+  const [streak, setStreak]         = useState(0);
+  const [best, setBest]             = useState(0);
+  const [sessQs, setSessQs]         = useState([]);
+  const [histQs, setHistQs]         = useState([]);
+  const [history, setHistory]       = useState([]);
+  const [j50, setJ50]               = useState(true);
+  const [jT, setJT]                 = useState(true);
+  const [time, setTime]             = useState(BASE_TIME);
+  const [timerOn, setTimerOn]       = useState(false);
+  const [lb, setLb]                 = useState([]);
+  const [lbLoad, setLbLoad]         = useState(false);
   const [finalScore, setFinalScore] = useState(0);
   const [finalBest, setFinalBest]   = useState(0);
   const timerRef = useRef(null);
@@ -200,19 +204,11 @@ export default function App() {
     return () => clearTimeout(timerRef.current);
   }, [timerOn, time, revealed]);
 
-  async function fetchLB() {
-    setLbLoad(true);
-    const data = await loadLB();
-    setLb(data);
-    setLbLoad(false);
-  }
+  async function fetchLB() { setLbLoad(true); setLb(await loadLB()); setLbLoad(false); }
 
   function goName() {
-    const n = nameInput.trim();
-    if (!n) return;
-    setPlayer(n);
-    fetchLB();
-    setScreen("menu");
+    const n = nameInput.trim(); if (!n) return;
+    setPlayer(n); fetchLB(); setScreen("menu");
   }
 
   async function loadQ(sQs, hQs, category) {
@@ -221,72 +217,58 @@ export default function App() {
     try {
       const allUsed = [...new Set([...hQs, ...sQs])];
       const nq = await fetchQuestion(category, diff, allUsed);
-      setQ(nq);
-      setTimerOn(true);
-    } catch (e) {
-      setErr("Fehler – bitte nochmals versuchen.");
-    }
+      setQ(nq); setTimerOn(true);
+    } catch { setErr("Fehler – bitte nochmals versuchen."); }
     setLoading(false);
   }
 
   async function startQuiz() {
-    const newSessQs = [];
-    const newScore = 0;
-    const newStreak = 0;
     setScore(0); setQNum(1); setStreak(0); setBest(0);
     setSessQs([]); setHistory([]); setJ50(true); setJT(true);
     setFinalScore(0); setFinalBest(0);
     setScreen("quiz");
     const played = await loadPlayed(player, cat);
     setHistQs(played);
-    loadQ(newSessQs, played, cat);
+    loadQ([], played, cat);
   }
 
   function doReveal(forceSel) {
-    clearTimeout(timerRef.current);
-    setTimerOn(false);
+    clearTimeout(timerRef.current); setTimerOn(false);
     const s = forceSel !== undefined ? forceSel : sel;
-    setSel(s);
-    setRevealed(true);
+    setSel(s); setRevealed(true);
     const ok = s !== null && s === q.richtig;
-    const ns = ok ? streak + 1 : 0;
+    const ns = ok ? streak+1 : 0;
     setStreak(ns);
-    const nb = Math.max(ns, best);
-    setBest(nb);
+    setBest(b => Math.max(ns, b));
     const bonus = ok && ns >= 3 ? 1 : 0;
-    const newScore = ok ? score + 1 + bonus : score;
-    if (ok) setScore(newScore);
+    if (ok) setScore(sc => sc+1+bonus);
     const newSessQs = [...sessQs, q.frage];
     setSessQs(newSessQs);
     savePlayed(player, q.frage, cat);
-    setHistory(h => [...h, { frage: q.frage, ok, richtig: q.antworten[q.richtig], bonus }]);
+    setHistory(h => [...h, { frage:q.frage, ok, richtig:q.antworten[q.richtig], bonus }]);
   }
 
   function goNext() {
     if (qNum >= TOTAL_Q) {
-      // Snapshot score & best before any state changes
-      const snapScore = score;
-      const snapBest  = best;
-      setFinalScore(snapScore);
-      setFinalBest(snapBest);
+      const snap = score + (history[history.length-1]?.ok && history[history.length-1]?.bonus ? 0 : 0);
+      setFinalScore(score);
+      setFinalBest(best);
       setScreen("result");
-      // Save to leaderboard in background
-      saveLB({ name: player, score: snapScore, total: TOTAL_Q, category: cat, difficulty: diff, bestStreak: snapBest, date: new Date().toLocaleDateString("de-CH") })
+      saveLB({ name:player, score, total:TOTAL_Q, category:cat, difficulty:diff, bestStreak:best, date:new Date().toLocaleDateString("de-CH") })
         .then(upd => { if (Array.isArray(upd)) setLb(upd); })
         .catch(() => {});
     } else {
-      setQNum(n => n + 1);
+      setQNum(n => n+1);
       loadQ(sessQs, histQs, cat);
     }
   }
 
   const catObj  = CATEGORIES.find(c => c.id === cat)  || CATEGORIES[11];
   const diffObj = DIFFICULTIES.find(d => d.id === diff) || DIFFICULTIES[1];
-  const timePct = (time / BASE_TIME) * 100;
+  const timePct = (time/BASE_TIME)*100;
   const timeCol = time > 10 ? "#4ade80" : time > 5 ? "#facc15" : "#f87171";
-  const maxPts  = TOTAL_Q + 3;
+  const maxPts  = TOTAL_Q+3;
 
-  // ── NAME ────────────────────────────────────────────────────────────────────
   if (screen === "name") return (
     <div className="page">
       <style>{css}</style>
@@ -300,15 +282,12 @@ export default function App() {
           onKeyDown={e => e.key==="Enter" && goName()}
           autoComplete="off" maxLength={20} />
         <div style={{ marginTop:14, textAlign:"center" }}>
-          <button className="btn-p" style={{ width:"auto", padding:"16px 40px" }} disabled={!nameInput.trim()} onClick={goName}>
-            Spielen →
-          </button>
+          <button className="btn-p" style={{ width:"auto", padding:"16px 40px" }} disabled={!nameInput.trim()} onClick={goName}>Spielen →</button>
         </div>
       </div>
     </div>
   );
 
-  // ── MENU ────────────────────────────────────────────────────────────────────
   if (screen === "menu") return (
     <div className="page">
       <style>{css}</style>
@@ -331,9 +310,7 @@ export default function App() {
           {CATEGORIES.map(c => (
             <button key={c.id} className={`cat ${cat===c.id?"on":""}`}
               style={cat===c.id ? { background:c.color, borderColor:c.color } : {}}
-              onClick={() => setCat(c.id)}>
-              {c.emoji} {c.label}
-            </button>
+              onClick={() => setCat(c.id)}>{c.emoji} {c.label}</button>
           ))}
         </div>
         <Lbl c="Schwierigkeit" />
@@ -354,7 +331,6 @@ export default function App() {
     </div>
   );
 
-  // ── QUIZ ────────────────────────────────────────────────────────────────────
   if (screen === "quiz") return (
     <div className="page">
       <style>{css}</style>
@@ -377,10 +353,8 @@ export default function App() {
           <span style={{ fontSize:12, fontWeight:700, letterSpacing:1.5, color:catObj.color, textTransform:"uppercase" }}>{catObj.emoji} {catObj.label}</span>
           <span style={{ fontSize:12, color:diffObj.color, opacity:.8, letterSpacing:1, textTransform:"uppercase" }}>· {diffObj.label}</span>
         </div>
-
         {loading && <div style={{ textAlign:"center", padding:"60px 0", color:"var(--muted)" }}><Spin /><div style={{ marginTop:14, fontSize:14 }}>Frage wird generiert…</div></div>}
         {err && <div style={{ textAlign:"center", padding:28, color:"#f87171", fontSize:14 }}>{err}<br /><br /><button className="btn-g" style={{ width:"auto" }} onClick={() => loadQ(sessQs, histQs, cat)}>Nochmals</button></div>}
-
         {!loading && !err && q && (
           <div className="pi">
             {!revealed && (
@@ -394,11 +368,9 @@ export default function App() {
                 </div>
               </div>
             )}
-
             <div style={{ padding:"18px 16px", background:"rgba(255,255,255,.04)", borderRadius:14, borderLeft:`3px solid ${catObj.color}`, marginBottom:14, fontFamily:"'Sora',sans-serif", fontSize:17, fontWeight:700, lineHeight:1.55 }}>
               {q.frage}
             </div>
-
             <div style={{ display:"flex", flexDirection:"column", gap:9, marginBottom:14 }}>
               {q.antworten.map((a, i) => {
                 const isElim = elim.includes(i);
@@ -410,19 +382,18 @@ export default function App() {
                   else cls += " dim";
                 } else if (sel === i) cls += " sel";
                 return (
-                  <button key={i} className={cls} disabled={revealed || isElim} onClick={() => !revealed && !isElim && setSel(i)}>
+                  <button key={i} className={cls} disabled={revealed||isElim} onClick={() => !revealed&&!isElim&&setSel(i)}>
                     <span style={{ fontWeight:700, fontSize:13, opacity:.45, minWidth:20, flexShrink:0 }}>{["A","B","C","D"][i]}</span>
                     <span style={{ flex:1 }}>{a}</span>
-                    {revealed && i === q.richtig && <span style={{ marginLeft:"auto" }}>✓</span>}
+                    {revealed && i===q.richtig && <span style={{ marginLeft:"auto" }}>✓</span>}
                   </button>
                 );
               })}
             </div>
-
             {!revealed && (
               <div style={{ display:"flex", gap:8, alignItems:"center" }}>
                 <button className={`joker ${!j50?"used":""}`} disabled={!j50} onClick={() => {
-                  if (!j50 || revealed || !q) return; setJ50(false);
+                  if (!j50||revealed||!q) return; setJ50(false);
                   const ws = q.antworten.map((_,i)=>i).filter(i=>i!==q.richtig&&i!==sel);
                   setElim(ws.sort(()=>Math.random()-.5).slice(0,2));
                 }}>
@@ -430,7 +401,7 @@ export default function App() {
                   <span style={{ fontSize:11, color:"var(--muted)" }}>50:50</span>
                 </button>
                 <button className={`joker ${!jT?"used":""}`} disabled={!jT} onClick={() => {
-                  if (!jT || revealed) return; setJT(false); setTime(t=>Math.min(t+15,35));
+                  if (!jT||revealed) return; setJT(false); setTime(t=>Math.min(t+15,35));
                 }}>
                   <span style={{ fontSize:18 }}>⏱️</span>
                   <span style={{ fontSize:11, color:"var(--muted)" }}>+15s</span>
@@ -442,7 +413,6 @@ export default function App() {
                 )}
               </div>
             )}
-
             {revealed && (
               <div className="fu">
                 <div className="explbox" style={{ marginBottom:14 }}>
@@ -462,10 +432,9 @@ export default function App() {
     </div>
   );
 
-  // ── RESULT ──────────────────────────────────────────────────────────────────
   if (screen === "result") {
-    const myRank = Array.isArray(lb) ? lb.findIndex(e => e.name === player && e.score === finalScore) : -1;
-    const emoji = finalScore >= 11 ? "🏆 Pub-Quiz-Legende!" : finalScore >= 8 ? "🥇 Ausgezeichnet!" : finalScore >= 6 ? "👍 Solides Resultat" : finalScore >= 4 ? "📚 Noch Luft nach oben" : "🎯 Weiter üben!";
+    const myRank = Array.isArray(lb) ? lb.findIndex(e => e.name===player && e.score===finalScore) : -1;
+    const emoji = finalScore>=11?"🏆 Pub-Quiz-Legende!":finalScore>=8?"🥇 Ausgezeichnet!":finalScore>=6?"👍 Solides Resultat":finalScore>=4?"📚 Noch Luft nach oben":"🎯 Weiter üben!";
     return (
       <div className="page">
         <style>{css}</style>
@@ -476,14 +445,8 @@ export default function App() {
             <div className="score-glow" style={{ fontFamily:"'Sora',sans-serif", fontSize:82, fontWeight:900, color:"var(--gold)", lineHeight:1 }}>{finalScore}</div>
             <div style={{ fontSize:13, color:"var(--muted)", marginTop:6 }}>von {maxPts} möglichen Punkten</div>
             <div style={{ fontFamily:"'Sora',sans-serif", fontSize:20, fontWeight:800, marginTop:12 }}>{emoji}</div>
-            <div style={{ fontSize:13, color:"var(--muted)", marginTop:8 }}>
-              {catObj.emoji} {catObj.label} · {diffObj.label} · Beste Streak 🔥{finalBest}
-            </div>
-            {myRank >= 0 && (
-              <div style={{ fontSize:14, color:"var(--gold)", fontWeight:700, marginTop:8 }}>
-                Platz {myRank+1} im Leaderboard 🏅
-              </div>
-            )}
+            <div style={{ fontSize:13, color:"var(--muted)", marginTop:8 }}>{catObj.emoji} {catObj.label} · {diffObj.label} · Beste Streak 🔥{finalBest}</div>
+            {myRank >= 0 && <div style={{ fontSize:14, color:"var(--gold)", fontWeight:700, marginTop:8 }}>Platz {myRank+1} im Leaderboard 🏅</div>}
           </div>
           <Divider />
           <Lbl c="Auswertung" />
@@ -494,7 +457,7 @@ export default function App() {
                 <div>
                   <div style={{ fontSize:14, color:"var(--muted)", lineHeight:1.45 }}>{h.frage}</div>
                   {!h.ok && <div style={{ fontSize:13, color:"#4ade80", marginTop:3 }}>✓ {h.richtig}</div>}
-                  {h.bonus > 0 && <div style={{ fontSize:12, color:"#f97316", marginTop:3 }}>🔥 +1 Streak-Bonus</div>}
+                  {h.bonus>0 && <div style={{ fontSize:12, color:"#f97316", marginTop:3 }}>🔥 +1 Streak-Bonus</div>}
                 </div>
               </div>
             ))}
@@ -509,7 +472,6 @@ export default function App() {
     );
   }
 
-  // ── LEADERBOARD ─────────────────────────────────────────────────────────────
   if (screen === "leaderboard") return (
     <div className="page">
       <style>{css}</style>
@@ -518,17 +480,17 @@ export default function App() {
         <div style={{ fontFamily:"'Sora',sans-serif", fontSize:22, fontWeight:800, marginBottom:18, textAlign:"center" }}>🏆 Leaderboard</div>
         {lbLoad ? (
           <div style={{ textAlign:"center", padding:"40px 0" }}><Spin /></div>
-        ) : !Array.isArray(lb) || lb.length === 0 ? (
+        ) : !Array.isArray(lb) || lb.length===0 ? (
           <div style={{ textAlign:"center", color:"var(--muted)", padding:"40px 0", fontSize:14 }}>Noch keine Einträge — sei der Erste!</div>
         ) : lb.map((e, i) => {
-          const isMe = e.name === player;
-          const c = CATEGORIES.find(c => c.id === e.category) || CATEGORIES[11];
+          const isMe = e.name===player;
+          const c = CATEGORIES.find(c => c.id===e.category)||CATEGORIES[11];
           return (
             <div key={i} style={{ display:"flex", alignItems:"center", gap:12, padding:"13px 14px", marginBottom:7, borderRadius:13, background:isMe?"rgba(212,170,85,.07)":"rgba(255,255,255,.03)", border:isMe?"1.5px solid rgba(212,170,85,.28)":"1.5px solid var(--border)" }}>
               <Medal i={i} />
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontSize:15, fontWeight:700, color:isMe?"var(--gold)":"var(--text)", display:"flex", alignItems:"center", gap:6 }}>
-                  {e.name}{isMe && <span style={{ fontSize:11, opacity:.5, fontWeight:400 }}>du</span>}
+                  {e.name}{isMe&&<span style={{ fontSize:11, opacity:.5, fontWeight:400 }}>du</span>}
                 </div>
                 <div style={{ fontSize:12, color:"var(--muted)", marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
                   {c.emoji} {c.label} · {e.difficulty} · 🔥{e.best_streak} · {e.date}
@@ -547,7 +509,6 @@ export default function App() {
     </div>
   );
 
-  // Fallback — sollte nie erreicht werden
   return (
     <div className="page" style={{ justifyContent:"center" }}>
       <style>{css}</style>
