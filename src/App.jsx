@@ -235,6 +235,9 @@ export default function App() {
   function doReveal(forceSel) {
     clearTimeout(timerRef.current); setTimerOn(false);
     const s = forceSel !== undefined ? forceSel : sel;
+    const currentFrage = q.frage;
+    const currentCat = cat;
+    const currentPlayer = player;
     setSel(s); setRevealed(true);
     const ok = s !== null && s === q.richtig;
     const ns = ok ? streak+1 : 0;
@@ -242,10 +245,14 @@ export default function App() {
     setBest(b => Math.max(ns, b));
     const bonus = ok && ns >= 3 ? 1 : 0;
     if (ok) setScore(sc => sc+1+bonus);
-    const newSessQs = [...sessQs, q.frage];
-    setSessQs(newSessQs);
-    savePlayed(player, q.frage, cat);
-    setHistory(h => [...h, { frage:q.frage, ok, richtig:q.antworten[q.richtig], bonus }]);
+    setSessQs(prev => [...prev, currentFrage]);
+    // Direkt speichern mit lokalen Variablen
+    fetch(`${SB_URL}/rest/v1/played_questions`, {
+      method: "POST",
+      headers: { ...SB_HEADS, "Prefer": "return=minimal" },
+      body: JSON.stringify({ player_name: currentPlayer, frage: currentFrage, category: currentCat }),
+    }).catch(e => console.error("savePlayed error:", e));
+    setHistory(h => [...h, { frage: currentFrage, ok, richtig: q.antworten[q.richtig], bonus }]);
   }
 
   function goNext() {
